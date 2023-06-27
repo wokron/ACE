@@ -823,7 +823,7 @@ class ReinforcementTrainer(ModelDistiller):
 
 					if current_score>=baseline_score:
 						log.info(f"==================Evaluating test set==================")    
-						pdb.set_trace()
+						# pdb.set_trace()
 						if macro_avg:
 							
 							if type(self.corpus) is ListCorpus:
