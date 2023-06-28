@@ -23,10 +23,11 @@ class BatchedData(list):
 class ColumnDataLoader:
 	## adopt from stanfordnlp, modfied by Xinyu Wang for flair's ColumnDataset
 	## link: https://github.com/stanfordnlp/stanfordnlp/tree/d8061501ff14c73734e834a08fa33c58c4a6d917
-	def __init__(self, data, batch_size, shuffle=False, args=None,grouped_data=False,use_bert=False, tokenizer=None, sort_data = True, sentence_level_batch = False, model = None):
+	def __init__(self, data, batch_size, shuffle=False, args=None,grouped_data=False,use_bert=False, tokenizer=None, sort_data = True, sentence_level_batch = False, model = None, collate_fn: callable=None):
 		self.batch_size = batch_size
 		self.args = args
-		self.shuffled=shuffle
+		self.shuffled = shuffle
+		self.collate_fn = collate_fn
 		data=list(data)
 		# self.word_map = word_map
 		# self.char_map = char_map
@@ -63,6 +64,10 @@ class ColumnDataLoader:
 		if key < 0 or key >= len(self.data):
 			raise IndexError
 		batch = self.data[key]
+
+		if self.collate_fn is not None:
+			batch = self.collate_fn(batch)
+
 		return batch
 		
 	def __iter__(self):
