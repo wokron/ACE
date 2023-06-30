@@ -195,8 +195,11 @@ class ConfigParser:
 			kwargs['use_crf']=crf
 		# pdb.set_trace()
 		kwargs['embeddings']=embeddings
-		kwargs['tag_type']=self.target
-		kwargs['tag_dictionary']=self.tag_dictionary
+		if "kgc" not in self.target:
+			kwargs['tag_type']=self.target
+			kwargs['tag_dictionary']=self.tag_dictionary
+		else:
+			kwargs['entity_num_embeddings'] = len(self.corpus.train.datasets[0].entity2id)
 		if not pretrained:
 			kwargs['target_languages']=self.num_corpus
 		tagger = getattr(models,classname)(**kwargs, config=config)
@@ -325,6 +328,8 @@ class ConfigParser:
 				else:
 					corpus_name = corpus
 				current_dataset=getattr(datasets,corpus_name)(**self.config[self.target][corpus])
+			elif "FB" in corpus:
+				current_dataset=getattr(datasets,corpus)()
 			else:
 				current_dataset=getattr(datasets,corpus)(tag_to_bioes=self.target)
 			corpus_list['train'].append(current_dataset.train)

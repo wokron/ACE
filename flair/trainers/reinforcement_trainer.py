@@ -547,7 +547,7 @@ class ReinforcementTrainer(ModelDistiller):
 					)
 
 				if not fine_tune_mode:
-					if self.model.tag_type in dependency_tasks:
+					if hasattr(self.model, "tag_type") and self.model.tag_type in dependency_tasks:
 						scheduler = ExponentialLR(optimizer, decay**(1/decay_steps))
 					else:
 						anneal_mode = "min" if train_with_dev else "max"
@@ -685,8 +685,8 @@ class ReinforcementTrainer(ModelDistiller):
 							
 							loss = self.model.forward_loss(student_input)
 
-							if self.model.use_decoder_timer:
-								decode_time=time.time() - self.model.time
+							# if self.model.use_decoder_timer:
+							# 	decode_time=time.time() - self.model.time
 							optimizer.zero_grad()
 							if self.n_gpu>1:
 								loss = loss.mean()  # mean() to average on multi-gpu parallel training
