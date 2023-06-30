@@ -4772,3 +4772,201 @@ class CoupleDataset:
         return self.corpus1[index],self.corpus2[index]
     def is_in_memory(self) -> bool:
         return self.corpus1.in_memory
+
+class KGCDataset(FlairDataset):
+    def __init__(
+            self,
+            path_to_column_file: Path,
+            tag_to_bioes: str = None,
+            comment_symbol: str = None,
+            spliter: str = "/",
+            entity2id: Dict[str, int] = None,
+    ):
+        """
+        Instantiates a dataset which was typically used for knowledge graph completion
+
+        :param path_to_column_file: path to the file with the column-formatted data
+        :param tag_to_bioes: whether to convert to BIOES tagging scheme
+        :param comment_symbol: if set, lines that begin with this symbol are treated as comments
+        """
+        assert path_to_column_file.exists()
+        self.path_to_column_file = path_to_column_file
+        self.tag_to_bioes = tag_to_bioes
+        self.comment_symbol = comment_symbol
+        self.sentences: List[(int, Sentence, int)] = []
+        self.relations: List[Sentence] = []
+        self.heads: List[int] = []
+        self.tails: List[int] = []
+
+        if entity2id is None:
+            self.entity2id: Dict[str, int] = {}
+        else:
+            self.entity2id: Dict[str, int] = entity2id
+
+        # determine encoding of text file
+        encoding = "utf-8"
+        try:
+            lines: List[str] = open(str(path_to_column_file), encoding="utf-8").read(
+                10
+            ).strip().split("\n")
+        except:
+            log.info(
+                'UTF-8 can\'t read: {} ... using "latin-1" instead.'.format(
+                    path_to_column_file
+                )
+            )
+            encoding = "latin1"
+
+        sentence: Sentence = Sentence()
+        with open(str(self.path_to_column_file), encoding=encoding) as f:
+
+            line = f.readline()
+            position = 0
+
+            while line:
+                line_split = line.strip().split("\t")
+                assert len(line_split) == 3
+                head_mid, line, tail_mid = line_split
+
+                if head_mid not in self.entity2id:
+                    self.entity2id[head_mid] = len(self.entity2id)
+                if tail_mid not in self.entity2id:
+                    self.entity2id[tail_mid] = len(self.entity2id)
+
+                head_id = self.entity2id[head_mid]
+                tail_id = self.entity2id[tail_mid]
+
+                if self.comment_symbol is not None and line.startswith(comment_symbol):
+                    line = f.readline()
+                    continue
+
+                # fields: List[str] = re.split("[\s/_]+", line)
+                fields: List[str] = re.findall(r"'?[a-z]+|" + spliter, line)
+                for field in fields:
+                    token = Token(field)
+                    sentence.add_token(token)
+
+                setattr(sentence, "head_id", head_id)
+                setattr(sentence, "tail_id", tail_id)
+                self.relations.append(sentence)
+                # self.heads.append(head_id)
+                # self.tails.append(tail_id)
+                # self.sentences.append((head_id, sentence, tail_id))
+
+                sentence: Sentence = Sentence()
+                line = f.readline()
+
+    def __len__(self):
+        return len(self.relations)
+
+    def __getitem__(self, index: int = 0) -> (int, Sentence, int):
+        return self.relations[index]
+
+class FB15K_237(Corpus):
+    def __init__(
+        self,
+        base_path: Union[str, Path] = None,
+        train_file=None,
+        test_file=None,
+        dev_file=None,
+        comment_symbol: str = None,
+    ):
+        """
+        :param base_path: base path with the task data
+        :param train_file: the name of the train file
+        :param test_file: the name of the test file
+        :param dev_file: the name of the dev file, if None, dev data is sampled from train
+        :param comment_symbol: if set, lines that begin with this symbol are treated as comments
+        """
+
+        if type(base_path) == str:
+            base_path: Path = Path(base_path)
+
+        dataset_name = self.__class__.__name__.lower()
+
+        # default dataset folder is the cache root
+        if not base_path:
+            base_path = Path(flair.cache_root) / "datasets"
+        data_folder = base_path / dataset_name
+
+        # check if data there
+        if not data_folder.exists():
+            log.warning("-" * 100)
+            log.warning(f'ACHTUNG: FB15K-237 dataset not found at "{data_folder}".')
+            log.warning("-" * 100)
+
+        if train_file is not None:
+            train_file = data_folder / train_file
+        if test_file is not None:
+            test_file = data_folder / test_file
+        if dev_file is not None:
+            dev_file = data_folder / dev_file
+
+        # automatically identify train / test / dev files
+        if train_file is None:
+            for file in data_folder.iterdir():
+                file_name = file.name
+                if file_name.endswith(".gz"):
+                    continue
+                if "train" in file_name:
+                    train_file = file
+                if "dev" in file_name:
+                    dev_file = file
+                if "valid" in file_name:
+                    dev_file = file
+                if "testa" in file_name:
+                    dev_file = file
+                if "testb" in file_name:
+                    test_file = file
+                if "test" in file_name:
+                    test_file = file
+
+            # if no test file is found, take any file with 'test' in name
+            if test_file is None:
+                for file in data_folder.iterdir():
+                    file_name = file.name
+                    if file_name.endswith(".gz"):
+                        continue
+                    if "test" in file_name:
+                        test_file = file
+
+        log.info("Reading data from {}".format(data_folder))
+        log.info("Train: {}".format(train_file))
+        log.info("Dev: {}".format(dev_file))
+        log.info("Test: {}".format(test_file))
+
+        # get train data
+        train = KGCDataset(
+            train_file,
+            comment_symbol=comment_symbol,
+        )
+
+        # read in test file if exists, otherwise sample 10% of train data as test dataset
+        if test_file is not None:
+            test = KGCDataset(
+                test_file,
+                comment_symbol=comment_symbol,
+                entity2id=train.entity2id,
+            )
+        else:
+            train_length = len(train)
+            test_size: int = round(train_length / 10)
+            splits = random_split(train, [train_length - test_size, test_size])
+            train = splits[0]
+            test = splits[1]
+
+        # read in dev file if exists, otherwise sample 10% of train data as dev dataset
+        if dev_file is not None:
+            dev = KGCDataset(
+                dev_file,
+                comment_symbol=comment_symbol,
+                entity2id=train.entity2id,
+            )
+        else:
+            train_length = len(train)
+            dev_size: int = round(train_length / 10)
+            splits = random_split(train, [train_length - dev_size, dev_size])
+            train = splits[0]
+            dev = splits[1]
+
+        super(FB15K_237, self).__init__(train, dev, test, name=data_folder.name)
